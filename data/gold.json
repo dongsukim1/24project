@@ -1,0 +1,37 @@
+{
+  "dataset_name": "tiny_ems_gold_v1",
+  "examples": [
+    {
+      "id": "case_001",
+      "transcript": "Medic 12 on scene with a 55-year-old male complaining of SOB. SpO2 88%. BP 150/90. Administered naloxone and started CPR.",
+      "entities": [
+        { "type": "UNIT_ID", "text": "Medic 12", "normalized": "MEDIC12" },
+        { "type": "SYMPTOM", "text": "SOB", "normalized": "SOB" },
+        { "type": "VITAL_SPO2", "text": "SpO2 88%", "normalized": "SpO2 88%" },
+        { "type": "VITAL_BP", "text": "150/90", "normalized": "150/90" },
+        { "type": "MEDICATION", "text": "naloxone", "normalized": "naloxone" },
+        { "type": "PROCEDURE", "text": "CPR", "normalized": "CPR" }
+      ]
+    },
+    {
+      "id": "case_002",
+      "transcript": "STEMI alert. GCS 14 on arrival. ETA 5 minutes to the ER.",
+      "entities": [
+        { "type": "CONDITION", "text": "STEMI", "normalized": "STEMI" },
+        { "type": "ASSESSMENT", "text": "GCS 14", "normalized": "GCS 14" },
+        { "type": "ETA", "text": "5 minutes", "normalized": "5 minutes" }
+      ]
+    },
+    {
+      "id": "case_003",
+      "transcript": "Engine 3 requests ALS/BLS intercept. Pulse ox 92 and blood pressure 110 over 70.",
+      "entities": [
+        { "type": "UNIT_ID", "text": "Engine 3", "normalized": "ENGINE3" },
+        { "type": "RESOURCE", "text": "ALS/BLS", "normalized": "ALS/BLS" },
+        { "type": "VITAL_SPO2", "text": "SpO2 92%", "normalized": "SpO2 92%" },
+        { "type": "VITAL_BP", "text": "110/70", "normalized": "110/70" }
+      ]
+    }
+  ]
+}
+

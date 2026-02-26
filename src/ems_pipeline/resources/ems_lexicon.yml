@@ -1,0 +1,46 @@
+# EMS lexicon used by `ems_pipeline.nlp.normalize`.
+#
+# This file is intended to be extended over time (site-specific acronyms, call signs, etc.).
+#
+# Notes:
+# - `variants` are matched case-insensitively with word boundaries.
+# - `unit_id_rules` are applied in order; `replacement` is a Python format string
+#   using the regex named capture groups (plus `prefix_upper` when `prefix` exists).
+#
+acronyms:
+  SOB:
+    - sob
+    - s.o.b.
+  GCS:
+    - gcs
+    - g.c.s.
+  ETA:
+    - eta
+    - e.t.a.
+  CPR:
+    - cpr
+    - c.p.r.
+  STEMI:
+    - stemi
+    - s.t.e.m.i.
+  ALS:
+    - als
+    - a.l.s.
+  BLS:
+    - bls
+    - b.l.s.
+  ALS/BLS:
+    - als/bls
+    - als bls
+    - bls/als
+
+medications:
+  naloxone:
+    - narcan
+    - naloxone
+
+unit_id_rules:
+  - name: unit_word_number
+    pattern: "\\b(?P<prefix>unit|medic|engine|truck|rescue|squad|car)\\s*#?-?\\s*(?P<number>\\d{1,4})\\b"
+    replacement: "{prefix_upper}{number}"
+

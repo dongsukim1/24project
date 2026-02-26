@@ -1,0 +1,42 @@
+[build-system]
+requires = ["hatchling>=1.22"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ems-ambient-pipeline"
+version = "0.1.0"
+description = "Minimal skeleton for an EMS Ambient Pipeline (transcribe -> extract -> build-claim)."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "numpy>=1.26",
+  "pydantic>=2.6",
+  "pyyaml>=6.0",
+  "typer>=0.12",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "ruff>=0.4",
+]
+
+[project.scripts]
+ems_pipeline = "ems_pipeline.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ems_pipeline"]
+include = ["src/ems_pipeline/resources/*.yml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/ems_pipeline/cli.py" = ["B008"]
