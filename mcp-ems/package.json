@@ -13,6 +13,7 @@
         "zod": "^3.25.76"
     },
     "devDependencies": {
+        "@ljharb/tsconfig": "^0.3.2",
         "@types/node": "^20.19.34",
         "tsx": "^4.21.0",
         "typescript": "^5.9.3"
