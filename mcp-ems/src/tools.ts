@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { execCmd, assertOk } from "./util.js";
 import fs from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 
 const CommonEnv = z
   .object({
@@ -24,6 +25,21 @@ async function readJson(path: string) {
 }
 
 export const ToolSchemas = {
+  agent2_run: z.object({
+    session_path: z.string(),
+    payer_id: z.string().optional(),
+    out_dir: z.string(),
+    env: CommonEnv
+  }),
+  agent1_run: z.object({
+    audio_path: z.string(),
+    out_dir: z.string(),
+    bandpass: z.boolean().default(false),
+    denoise: z.boolean().default(false),
+    model: z.string().optional(),
+    confidence_threshold: z.number().min(0).max(1).default(0.7),
+    env: CommonEnv
+  }),
   preprocess_audio: z.object({
     audio_path: z.string(),
     out_path: z.string(),
@@ -133,9 +149,14 @@ export async function buildClaim(input: z.infer<typeof ToolSchemas.build_claim>)
 
 export async function runPipeline(input: z.infer<typeof ToolSchemas.run_pipeline>) {
   // End-to-end orchestration using the individual CLI commands
-  const outTranscript = `${input.out_dir.replace(/\/$/, "")}/transcript.json`;
-  const outEntities = `${input.out_dir.replace(/\/$/, "")}/entities.json`;
-  const outClaim = `${input.out_dir.replace(/\/$/, "")}/claim.json`;
+  const baseDir = input.out_dir.replace(/\/$/, "");
+  const outTranscript = `${baseDir}/transcript.json`;
+  const outEntities = `${baseDir}/entities.json`;
+  const outClaim = `${baseDir}/claim.json`;
+  const outSession = `${baseDir}/session.json`;
+
+  // Unique identifier for this pipeline run; wired through to the session file.
+  const encounter_id = randomUUID();
 
   await fs.mkdir(input.out_dir, { recursive: true });
 
@@ -162,7 +183,67 @@ export async function runPipeline(input: z.infer<typeof ToolSchemas.run_pipeline
 
   // Return parsed claim for convenience
   const claim = await readJson(outClaim);
-  return { ok: true, out_dir: input.out_dir, claim, paths: { outTranscript, outEntities, outClaim } };
+  return {
+    ok: true,
+    out_dir: input.out_dir,
+    claim,
+    paths: { outTranscript, outEntities, outClaim, outSession },
+    encounter_id,
+    session_path: outSession
+  };
+}
+
+export async function agent2Run(input: z.infer<typeof ToolSchemas.agent2_run>) {
+  const env = input.env;
+  const { cmd, baseArgs } = cliCommand(env);
+
+  const args = [
+    ...baseArgs,
+    "agent2",
+    input.session_path,
+    "--out-dir", input.out_dir
+  ];
+  if (input.payer_id) args.push("--payer-id", input.payer_id);
+
+  const res = await execCmd(cmd, args, { cwd: env.workdir });
+  assertOk(res, "agent2_run");
+
+  const summary = JSON.parse(res.stdout.trim());
+  return {
+    ok: true,
+    session_path: summary.session_path as string,
+    encounter_id: summary.encounter_id as string,
+    report_length: summary.report_length as number,
+    codes_suggested: summary.codes_suggested as number
+  };
+}
+
+export async function agent1Run(input: z.infer<typeof ToolSchemas.agent1_run>) {
+  const env = input.env;
+  const { cmd, baseArgs } = cliCommand(env);
+
+  const args = [
+    ...baseArgs,
+    "agent1",
+    input.audio_path,
+    "--out-dir", input.out_dir,
+    "--confidence-threshold", String(input.confidence_threshold)
+  ];
+  if (input.bandpass) args.push("--bandpass");
+  if (input.denoise) args.push("--denoise");
+  if (input.model) args.push("--model", input.model);
+
+  const res = await execCmd(cmd, args, { cwd: env.workdir });
+  assertOk(res, "agent1_run");
+
+  const summary = JSON.parse(res.stdout.trim());
+  return {
+    ok: true,
+    session_path: summary.session_path as string,
+    encounter_id: summary.encounter_id as string,
+    confidence_flags_count: summary.confidence_flags_count as number,
+    ambiguities_count: summary.ambiguities_count as number
+  };
 }
 
 export async function evalPred(input: z.infer<typeof ToolSchemas.eval>) {

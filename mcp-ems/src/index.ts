@@ -3,6 +3,8 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 
 import {
+  agent1Run,
+  agent2Run,
   preprocessAudio,
   transcribeAudio,
   extractEntities,
@@ -63,6 +65,23 @@ const EvalSchema = z.object({
   gold_path: z.string(),
   pred_path: z.string(),
   out_path: z.string(),
+  env: CommonEnvSchema.default({ pythonBin: "python", cli: "ems_pipeline", cliMode: "bin" })
+});
+
+const Agent2RunSchema = z.object({
+  session_path: z.string(),
+  payer_id: z.string().optional(),
+  out_dir: z.string(),
+  env: CommonEnvSchema.default({ pythonBin: "python", cli: "ems_pipeline", cliMode: "bin" })
+});
+
+const Agent1RunSchema = z.object({
+  audio_path: z.string(),
+  out_dir: z.string(),
+  bandpass: z.boolean().default(false),
+  denoise: z.boolean().default(false),
+  model: z.string().optional(),
+  confidence_threshold: z.number().min(0).max(1).default(0.7),
   env: CommonEnvSchema.default({ pythonBin: "python", cli: "ems_pipeline", cliMode: "bin" })
 });
 
@@ -144,6 +163,30 @@ server.tool(
   async (args: z.infer<typeof EvalSchema>) => {
     try {
       return ok(await evalPred(args as any));
+    } catch (e) {
+      return err(e);
+    }
+  }
+);
+
+server.tool(
+  "ems.agent2_run",
+  Agent2RunSchema.shape,
+  async (args: z.infer<typeof Agent2RunSchema>) => {
+    try {
+      return ok(await agent2Run(args as any));
+    } catch (e) {
+      return err(e);
+    }
+  }
+);
+
+server.tool(
+  "ems.agent1_run",
+  Agent1RunSchema.shape,
+  async (args: z.infer<typeof Agent1RunSchema>) => {
+    try {
+      return ok(await agent1Run(args as any));
     } catch (e) {
       return err(e);
     }
