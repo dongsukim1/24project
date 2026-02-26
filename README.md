@@ -1,6 +1,6 @@
 # EMS Ambient Pipeline
 
-Python 3.11+ prototype for EMS ambient documentation and claims workflow.
+Prototype for EMS ambient documentation and claims workflow.
 
 Core pipeline:
 1. `transcribe`: audio -> diarized transcript segments
