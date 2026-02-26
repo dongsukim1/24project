@@ -11,26 +11,173 @@ TODO:
 
 from __future__ import annotations
 
+import json
+import os
 import re
+import sys
+import warnings
 from typing import Any
 
 from ems_pipeline.models import EntitiesDocument, Entity, Transcript
+from ems_pipeline.nlp.negation import apply_negation
+from ems_pipeline.nlp.nlp_extractor import NlpExtractor
 from ems_pipeline.nlp.normalize import UnitIdRule, normalize_text
 from ems_pipeline.nlp.normalize import _compile_unit_id_rules as _compile_unit_id_rules_from_lexicon
 from ems_pipeline.nlp.normalize import _load_lexicon as _load_lexicon_from_resources
 
+_nlp_extractor: NlpExtractor | None = None
+_nlp_extractor_initialized = False
+_EXTRACT_DEBUG_ENV_VAR = "EMS_EXTRACT_DEBUG"
 
-def extract_entities(transcript: Transcript) -> EntitiesDocument:
+
+def get_nlp_extractor() -> NlpExtractor | None:
+    global _nlp_extractor, _nlp_extractor_initialized
+    if _nlp_extractor_initialized:
+        return _nlp_extractor
+
+    _nlp_extractor_initialized = True
+    try:
+        _nlp_extractor = NlpExtractor()
+    except Exception as exc:
+        warnings.warn(
+            f"NLP extractor initialization failed; NLP extraction disabled: {exc}",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        _nlp_extractor = None
+
+    return _nlp_extractor
+
+
+def _get_nlp_extractor() -> NlpExtractor | None:
+    # Backward-compatible alias for older tests/callers.
+    return get_nlp_extractor()
+
+
+def _is_truthy(value: str | None) -> bool:
+    if value is None:
+        return False
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _extract_debug_enabled(debug: bool | None) -> bool:
+    if debug is not None:
+        return debug
+    return _is_truthy(os.getenv(_EXTRACT_DEBUG_ENV_VAR))
+
+
+def _entity_debug_payload(entity: Entity) -> dict[str, Any]:
+    attrs = entity.attributes if isinstance(entity.attributes, dict) else {}
+    source = attrs.get("source")
+    segment_id = attrs.get("segment_id")
+    return {
+        "type": entity.type,
+        "text": entity.text,
+        "normalized": entity.normalized,
+        "source": source if isinstance(source, str) else "unknown",
+        "segment_id": segment_id if isinstance(segment_id, str) else None,
+        "confidence": entity.confidence,
+    }
+
+
+def _emit_extract_debug(label: str, payload: Any) -> None:
+    encoded = json.dumps(payload, ensure_ascii=True, sort_keys=True)
+    print(f"[extract.debug] {label}: {encoded}", file=sys.stderr)
+
+
+def merge_entities(
+    rule_entities: list[Entity],
+    nlp_entities: list[Entity],
+    confidence_threshold: float = 0.5,
+) -> list[Entity]:
+    def _segment_id(entity: Entity) -> str | None:
+        segment_id = entity.attributes.get("segment_id")
+        return segment_id if isinstance(segment_id, str) else None
+
+    def _span(entity: Entity) -> tuple[float, float] | None:
+        if entity.start is None or entity.end is None:
+            return None
+        if entity.end <= entity.start:
+            return None
+        return (entity.start, entity.end)
+
+    known_types = {entity.type for entity in rule_entities}
+    known_types.update(entity.type for entity in nlp_entities)
+
+    related_type_groups: list[set[str]] = [
+        {"SYMPTOM", "CONDITION"},
+    ]
+    if {"MEDICATION", "DRUG"} <= known_types:
+        related_type_groups.append({"MEDICATION", "DRUG"})
+
+    def types_are_related(type_a: str, type_b: str) -> bool:
+        if type_a == type_b:
+            return True
+        return any(type_a in group and type_b in group for group in related_type_groups)
+
+    occupied: dict[str, list[tuple[float, float, str]]] = {}
+    for entity in rule_entities:
+        segment_id = _segment_id(entity)
+        span = _span(entity)
+        if segment_id is None or span is None:
+            continue
+        occupied.setdefault(segment_id, []).append((span[0], span[1], entity.type))
+
+    accepted_nlp_entities: list[Entity] = []
+    for entity in nlp_entities:
+        confidence = entity.confidence if entity.confidence is not None else 0.0
+        if confidence < confidence_threshold:
+            continue
+
+        segment_id = _segment_id(entity)
+        span = _span(entity)
+        if segment_id is None or span is None:
+            accepted_nlp_entities.append(entity)
+            continue
+
+        span_start, span_end = span
+        overlaps_related = False
+        for other_start, other_end, other_type in occupied.get(segment_id, []):
+            if not types_are_related(entity.type, other_type):
+                continue
+            if span_start < other_end and span_end > other_start:
+                overlaps_related = True
+                break
+
+        if overlaps_related:
+            continue
+
+        accepted_nlp_entities.append(entity)
+        occupied.setdefault(segment_id, []).append((span_start, span_end, entity.type))
+
+    return [*rule_entities, *accepted_nlp_entities]
+
+
+def extract_entities(
+    transcript: Transcript,
+    *,
+    debug: bool | None = None,
+) -> EntitiesDocument:
     """Extract EMS entities + context from a transcript.
 
     Args:
         transcript: A diarized transcript (JSON from `ems_pipeline transcribe`).
+        debug: When `True` (or env `EMS_EXTRACT_DEBUG=1`), emits debug summaries
+            for rule entities, NLP pre-merge entities, negation drops, and merged
+            output.
 
     Returns:
         EntitiesDocument: list of entities with context and optional timing info.
     """
 
-    segment_id_map = transcript.metadata.get("segment_id_map") if isinstance(transcript.metadata, dict) else None
+    global _nlp_extractor
+    debug_enabled = _extract_debug_enabled(debug)
+
+    segment_id_map = (
+        transcript.metadata.get("segment_id_map")
+        if isinstance(transcript.metadata, dict)
+        else None
+    )
     index_to_segment_id: dict[int, str] = {}
     if isinstance(segment_id_map, dict):
         for seg_id, idx in segment_id_map.items():
@@ -45,6 +192,7 @@ def extract_entities(transcript: Transcript) -> EntitiesDocument:
 
     entities: list[Entity] = []
     segment_normalization: dict[str, dict[str, Any]] = {}
+    nlp_segment_inputs: list[tuple[str, str, Any]] = []
 
     spo2_re = re.compile(r"(?<!\w)SpO2\s+(?P<value>\d{2,3})%(?!\w)")
     bp_re = re.compile(r"(?<!\w)(?P<sys>\d{2,3})/(?P<dia>\d{2,3})(?!\w)")
@@ -102,7 +250,14 @@ def extract_entities(transcript: Transcript) -> EntitiesDocument:
         flags=re.IGNORECASE,
     )
 
-    def _emit(*, entity_type: str, text: str, normalized: str | None, seg_id: str, seg: Any) -> None:
+    def _emit(
+        *,
+        entity_type: str,
+        text: str,
+        normalized: str | None,
+        seg_id: str,
+        seg: Any,
+    ) -> None:
         entities.append(
             Entity(
                 type=entity_type,
@@ -112,7 +267,7 @@ def extract_entities(transcript: Transcript) -> EntitiesDocument:
                 end=getattr(seg, "end", None),
                 speaker=getattr(seg, "speaker", None),
                 confidence=getattr(seg, "confidence", None),
-                attributes={"segment_id": seg_id},
+                attributes={"segment_id": seg_id, "source": "rule"},
             )
         )
 
@@ -121,12 +276,19 @@ def extract_entities(transcript: Transcript) -> EntitiesDocument:
         seg_text = seg.text
         seg_norm, seg_map = normalize_text(seg_text, unit_id_rules=unit_id_rules)
         segment_normalization[seg_id] = seg_map
+        nlp_segment_inputs.append((seg_id, seg_norm, seg))
 
         for rule in unit_id_rules:
             for m in rule.pattern.finditer(seg_text):
                 surface = m.group(0)
                 norm_unit, _ = normalize_text(surface, unit_id_rules=[rule])
-                _emit(entity_type="UNIT_ID", text=surface, normalized=norm_unit, seg_id=seg_id, seg=seg)
+                _emit(
+                    entity_type="UNIT_ID",
+                    text=surface,
+                    normalized=norm_unit,
+                    seg_id=seg_id,
+                    seg=seg,
+                )
 
         for m in spo2_re.finditer(seg_norm):
             v = f"SpO2 {m.group('value')}%"
@@ -143,9 +305,21 @@ def extract_entities(transcript: Transcript) -> EntitiesDocument:
         if cpr_re.search(seg_norm):
             _emit(entity_type="PROCEDURE", text="CPR", normalized="CPR", seg_id=seg_id, seg=seg)
         if als_bls_re.search(seg_norm):
-            _emit(entity_type="RESOURCE", text="ALS/BLS", normalized="ALS/BLS", seg_id=seg_id, seg=seg)
+            _emit(
+                entity_type="RESOURCE",
+                text="ALS/BLS",
+                normalized="ALS/BLS",
+                seg_id=seg_id,
+                seg=seg,
+            )
         if naloxone_re.search(seg_norm):
-            _emit(entity_type="MEDICATION", text="naloxone", normalized="naloxone", seg_id=seg_id, seg=seg)
+            _emit(
+                entity_type="MEDICATION",
+                text="naloxone",
+                normalized="naloxone",
+                seg_id=seg_id,
+                seg=seg,
+            )
 
         for m in gcs_re.finditer(seg_norm):
             v = f"GCS {m.group('score')}"
@@ -163,6 +337,82 @@ def extract_entities(transcript: Transcript) -> EntitiesDocument:
 
     full_text_original = " ".join(s.text for s in transcript.segments).strip()
     full_text_normalized, full_map = normalize_text(full_text_original, unit_id_rules=unit_id_rules)
+
+    nlp_entities: list[Entity] = []
+    negation_drops: list[dict[str, Any]] = []
+    merge_confidence_threshold = 0.5
+    extractor: NlpExtractor | None = None
+    used_transcript_fallback = False
+    for seg_id, seg_norm, seg in nlp_segment_inputs:
+        if extractor is None:
+            extractor = _get_nlp_extractor()
+            if extractor is None:
+                break
+            merge_confidence_threshold = float(getattr(extractor, "confidence_threshold", 0.5))
+
+        try:
+            extracted = extractor.extract(seg_norm, seg)
+        except TypeError:
+            try:
+                extracted = extractor.extract(transcript, index_to_segment_id=index_to_segment_id)
+                used_transcript_fallback = True
+            except ImportError as exc:
+                warnings.warn(str(exc), RuntimeWarning, stacklevel=2)
+                _nlp_extractor = None
+                nlp_entities = []
+                break
+            except Exception:
+                nlp_entities = []
+                break
+        except ImportError as exc:
+            warnings.warn(str(exc), RuntimeWarning, stacklevel=2)
+            _nlp_extractor = None
+            nlp_entities = []
+            break
+        except Exception:
+            nlp_entities = []
+            break
+
+        pop_negation_drops = getattr(extractor, "pop_negation_drops", None)
+        if callable(pop_negation_drops):
+            try:
+                dropped = pop_negation_drops()
+                if isinstance(dropped, list):
+                    negation_drops.extend(
+                        item for item in dropped if isinstance(item, dict)
+                    )
+            except Exception:
+                pass
+
+        for entity in extracted:
+            if not used_transcript_fallback:
+                entity.attributes["segment_id"] = seg_id
+            entity.attributes.setdefault("source", "nlp")
+        nlp_entities.extend(extracted)
+        if used_transcript_fallback:
+            break
+
+    if nlp_entities:
+        try:
+            nlp_entities = apply_negation(nlp_entities, transcript)
+        except Exception:
+            nlp_entities = []
+
+    rule_entities = list(entities)
+    entities = merge_entities(
+        rule_entities,
+        nlp_entities,
+        confidence_threshold=merge_confidence_threshold,
+    )
+
+    if debug_enabled:
+        _emit_extract_debug("rule_entities", [_entity_debug_payload(e) for e in rule_entities])
+        _emit_extract_debug(
+            "nlp_entities_pre_merge",
+            [_entity_debug_payload(e) for e in nlp_entities],
+        )
+        _emit_extract_debug("entities_removed_by_negation", negation_drops)
+        _emit_extract_debug("final_merged_entities", [_entity_debug_payload(e) for e in entities])
 
     return EntitiesDocument(
         entities=entities,

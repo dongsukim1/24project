@@ -69,6 +69,14 @@ python -m ems_pipeline run ./sample.wav --out-dir ./out/run
 - ASR model name comes from `EMS_ASR_MODEL` (`base`, `small`, `medium`, `large-v3`).
 - Payer-rules retrieval reads from `EMS_PAYER_RULES_INDEX` when set.
 - Coding-guidelines retrieval reads from `EMS_CODING_GUIDELINES_INDEX` when set.
+- NLP extraction uses `gliner` (`Ihor/gliner-biomed-base-v1.0` by default).
+- GLiNER weights download from Hugging Face on first model load.
+- GLiNER runs on CPU by default; no GPU is required.
+- GLiNER confidence threshold defaults to `0.5`.
+- Negation/context handling is a v1 ConText-inspired rule set with known scope/syntax limitations.
+- The v2 dependency-parse negation idea is documented only (no implementation yet).
+- No `spacy` dependency is required for the current NLP/negation path.
+- This repository is a prototype and is not production-complete.
 
 ## Data And Tests
 
