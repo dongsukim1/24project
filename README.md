@@ -1,46 +1,15 @@
 # EMS Ambient Pipeline
 
-A Python 3.11+ prototype pipeline for EMS ambient documentation:
+Python 3.11+ prototype for EMS ambient documentation and claims workflow.
 
-1. **Transcribe** audio into timestamped segments with speaker labels.  
-2. **Extract** EMS entities from the transcript with lightweight normalization.  
-3. **Build** a structured proto-claim JSON with provenance links.
+Core pipeline:
+1. `transcribe`: audio -> diarized transcript segments
+2. `extract`: transcript -> structured EMS entities
+3. `build-claim`: entities -> proto-claim JSON with provenance
 
-This repository now includes substantial implementation for stages (1) and (2), plus a more complete claim-builder implementation in `ems_pipeline.claim.builder`. However, there are still integration and data gaps before a full end-to-end real-world demo.
+The repository also includes a 4-agent orchestration flow (`agent1`..`agent4`, plus `run`) built around `SessionContext`.
 
-## What currently exists
-
-### Implemented modules
-
-- **Data models**: Pydantic schemas for transcript, entities, and claim documents.
-- **Audio preprocessing**:
-  - WAV loading/resampling/chunking utilities.
-  - Optional bandpass filter and spectral-gate denoise.
-- **ASR adapter**:
-  - Offline Whisper integration via `faster-whisper` (preferred) or `openai-whisper`.
-  - Local-only model expectation (no runtime download logic in app flow).
-- **Diarization**:
-  - Baseline fallback diarizer that currently behaves as a simple/default strategy.
-- **Entity extraction**:
-  - Rule-based extractor for selected EMS terms (e.g., vitals, symptoms, procedures, ETA, unit IDs).
-  - Lexicon-backed normalization.
-- **Timeline + claim assembly**:
-  - `ems_pipeline.claim.timeline` event extraction.
-  - `ems_pipeline.claim.builder` proto-claim construction with evidence links.
-- **Evaluation harness**:
-  - PRF by entity type and key-term coverage over a gold dataset format.
-- **Tests**:
-  - Unit/integration-style tests spanning models, ASR adapters, extraction, timeline, claim builder, audio, and eval metrics.
-
-## Important current limitation
-
-The CLI command `build-claim` imports `build_claim` from `ems_pipeline.claim` (package `__init__`), and that function currently raises `NotImplementedError`. The fuller implementation lives in `ems_pipeline.claim.builder`.
-
-So, **CLI-based end-to-end runs currently stop at claim-building unless this wiring is updated**.
-
-## Running locally
-
-### 1) Create environment
+## Setup
 
 PowerShell:
 
@@ -57,71 +26,69 @@ Bash:
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install -U pip
-python -m pip install -e '.[dev]'
+python -m pip install -e ".[dev]"
 ```
 
-### 2) Configure optional ASR model selection
+## CLI Commands
+
+Show all commands:
 
 ```bash
-export EMS_ASR_MODEL=base
-# or: small, medium, large-v3
+python -m ems_pipeline --help
 ```
 
-### 3) Run tests
-
-```bash
-pytest
-```
-
-### 4) CLI usage
+Stage-by-stage:
 
 ```bash
 python -m ems_pipeline transcribe ./sample.wav --out ./out/transcript.json
 python -m ems_pipeline extract ./out/transcript.json --out ./out/entities.json
 python -m ems_pipeline build-claim ./out/entities.json --out ./out/claim.json
+```
+
+Evaluation:
+
+```bash
 python -m ems_pipeline eval --gold ./data/gold.json --pred ./out/pred.json
 ```
 
-## What is still missing for a full demo
+Agent/orchestrator flow:
 
-Beyond "no Whisper/ASR model connected" and "no real audio/CAD files", these are the major gaps:
+```bash
+python -m ems_pipeline agent1 ./sample.wav --out-dir ./out/a1
+python -m ems_pipeline agent2 ./out/a1/session.json --out-dir ./out/a2
+python -m ems_pipeline agent3 ./out/a2/session.json --out-dir ./out/a3
+python -m ems_pipeline agent4 ./out/a3/session.json --out-dir ./out/a4
+python -m ems_pipeline run ./sample.wav --out-dir ./out/run
+```
 
-1. **Claim stage CLI wiring gap**
-   - `build-claim` currently points at a `NotImplementedError` function path.
-   - The implemented claim builder exists but is not wired into the stable CLI path.
+## Runtime Notes
 
-2. **Runtime ASR dependencies + local model cache**
-   - You need one backend installed (`faster-whisper` or `openai-whisper`).
-   - You need local Whisper model weights available in cache/model dir.
+- `transcribe` requires a local Whisper backend:
+  - `faster-whisper` (preferred) or
+  - `openai-whisper`
+- ASR model name comes from `EMS_ASR_MODEL` (`base`, `small`, `medium`, `large-v3`).
+- Payer-rules retrieval reads from `EMS_PAYER_RULES_INDEX` when set.
+- Coding-guidelines retrieval reads from `EMS_CODING_GUIDELINES_INDEX` when set.
 
-3. **Dependency/bootstrap reliability in constrained environments**
-   - The project uses modern Python deps (`pydantic`, `numpy`, etc.) and build backend tooling.
-   - In restricted networks, dependency install may fail unless mirrors/proxy are configured.
+## Data And Tests
 
-4. **Real diarization quality layer**
-   - Current diarization path is baseline/fallback and likely insufficient for realistic multi-speaker call audio.
+- Gold eval dataset: `data/gold.json`
+- Test suite:
 
-5. **Extraction coverage depth**
-   - Extraction is rule-based and intentionally narrow; no robust negation/uncertainty or advanced ontology coverage yet.
+```bash
+python -m pytest -q
+```
 
-6. **Evaluation/prediction data contract in demo scripts**
-   - `eval` expects specific JSON structures; demo assets/pred generation scripts need to output those shapes consistently.
+## Development Commands
 
-7. **Operational/demo assets**
-   - No sample end-to-end demo script/notebook that runs complete ingest -> output using packaged example inputs.
-   - No packaged synthetic audio fixtures representative of real call conditions.
+Make targets:
 
-8. **Production hardening**
-   - No service/API deployment layer, auth, observability, or persistent storage workflow.
-   - No explicit PHI/PII handling policy implementation in code paths.
+- `make format`
+- `make lint`
+- `make test`
 
-## Development commands
+PowerShell scripts:
 
-- Make:
-  - `make format`
-  - `make lint`
-  - `make test`
-- PowerShell scripts:
-  - `./scripts/format.ps1`
-  - `./scripts/lint.ps1`
-  - `./scripts/test.ps1`
+- `./scripts/format.ps1`
+- `./scripts/lint.ps1`
+- `./scripts/test.ps1`
