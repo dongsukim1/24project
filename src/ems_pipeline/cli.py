@@ -16,6 +16,12 @@ from ems_pipeline.agents.agent1 import Agent1Options
 from ems_pipeline.agents.agent1 import run as agent1_run
 from ems_pipeline.agents.agent2 import Agent2Options
 from ems_pipeline.agents.agent2 import run as agent2_run
+from ems_pipeline.agents.agent3 import Agent3Options
+from ems_pipeline.agents.agent3 import run as agent3_run
+from ems_pipeline.agents.agent4 import Agent4Options
+from ems_pipeline.agents.agent4 import run as agent4_run
+from ems_pipeline.orchestrator import OrchestratorOptions
+from ems_pipeline.orchestrator import run_pipeline_supervised
 from ems_pipeline.claim import build_claim
 from ems_pipeline.eval.harness import evaluate as eval_entities
 from ems_pipeline.eval.harness import format_report as format_eval_report
@@ -181,6 +187,112 @@ def agent2_cmd(
         "session_path": str(session_path),
         "report_length": len(session.report_draft or ""),
         "codes_suggested": len(session.code_suggestions or []),
+    }
+    typer.echo(json.dumps(summary))
+
+
+@app.command("agent3")
+def agent3_cmd(
+    session_json: Path = typer.Argument(..., exists=True, readable=True),
+    out_dir: Path = typer.Option(..., "--out-dir", help="Output directory for updated session.json."),
+    payer_id: str | None = typer.Option(None, "--payer-id", help="Payer ID for requirements retrieval and filing."),
+    max_remediation_loops: int = typer.Option(
+        1,
+        "--max-remediation-loops",
+        help="Maximum remediation loops before forcing submission (0 = skip remediation).",
+        min=0,
+    ),
+) -> None:
+    """Validate, optionally remediate, and file the claim; write updated SessionContext JSON."""
+
+    session = SessionContext.from_json(session_json)
+    options = Agent3Options(payer_id=payer_id, max_remediation_loops=max_remediation_loops)
+
+    try:
+        result = agent3_run(session, options)
+    except NotImplementedError as exc:
+        typer.echo(f"Not implemented: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    session_path = out_dir / "session.json"
+    result.updated_session.to_json(session_path)
+
+    # Emit a JSON summary to stdout so the MCP tool can parse the result.
+    summary = {
+        "encounter_id": result.updated_session.encounter_id,
+        "session_path": str(session_path),
+        "submitted": result.submitted,
+        "flags_count": len(result.flags),
+        "remediation_requested": result.remediation_requested,
+        "remediation_notes": result.remediation_notes,
+    }
+    typer.echo(json.dumps(summary))
+
+
+@app.command("agent4")
+def agent4_cmd(
+    session_json: Path = typer.Argument(..., exists=True, readable=True),
+    out_dir: Path = typer.Option(..., "--out-dir", help="Output directory for updated session.json."),
+    payer_id: str | None = typer.Option(None, "--payer-id", help="Payer ID override for appeal context retrieval."),
+) -> None:
+    """Assess claim denial, select appeal strategy, and generate an appeal script."""
+
+    session = SessionContext.from_json(session_json)
+    options = Agent4Options(payer_id=payer_id)
+
+    try:
+        result = agent4_run(session, options)
+    except NotImplementedError as exc:
+        typer.echo(f"Not implemented: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    session_path = out_dir / "session.json"
+    result.updated_session.to_json(session_path)
+
+    # Emit a JSON summary to stdout so the MCP tool can parse the result.
+    summary = {
+        "encounter_id": result.updated_session.encounter_id,
+        "session_path": str(session_path),
+        "strategy_chosen": result.strategy_chosen,
+        "appeal_script_length": len(result.appeal_script),
+        "voice_session_id": result.voice_session_id,
+    }
+    typer.echo(json.dumps(summary))
+
+
+@app.command("run")
+def run_cmd(
+    audio_path: Path = typer.Argument(..., exists=True, readable=True),
+    out_dir: Path = typer.Option(..., "--out-dir", help="Output directory for session.json and all artefacts."),
+    payer_id: str | None = typer.Option(None, "--payer-id", help="Payer ID for requirements retrieval and filing."),
+    bandpass: bool = typer.Option(False, "--bandpass", help="Apply a telephone-like bandpass filter (~200–3400 Hz)."),
+    denoise: bool = typer.Option(False, "--denoise", help="Apply lightweight spectral-gate noise reduction."),
+    model: str = typer.Option("base", "--model", help="ASR model name (base, small, medium, large-v3)."),
+) -> None:
+    """Run the full supervised 4-agent pipeline: transcribe → extract → report → file."""
+
+    options = OrchestratorOptions(
+        payer_id=payer_id,
+        bandpass=bandpass,
+        denoise=denoise,
+        asr_model=model,
+    )
+
+    try:
+        result = run_pipeline_supervised(audio_path, out_dir, options)
+    except Exception as exc:
+        typer.echo(f"Pipeline failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    summary = {
+        "encounter_id": result.session.encounter_id,
+        "session_path": str(out_dir / "session.json"),
+        "submitted": result.submitted,
+        "agents_run": result.agents_run,
+        "remediation_loops": result.remediation_loops,
+        "errors": result.errors,
     }
     typer.echo(json.dumps(summary))
 

@@ -5,6 +5,8 @@ import { z } from "zod";
 import {
   agent1Run,
   agent2Run,
+  agent3Run,
+  agent4Run,
   preprocessAudio,
   transcribeAudio,
   extractEntities,
@@ -58,6 +60,7 @@ const RunPipelineSchema = z.object({
   bandpass: z.boolean().default(false),
   denoise: z.boolean().default(false),
   model: z.string().optional(),
+  payer_id: z.string().optional(),
   env: CommonEnvSchema.default({ pythonBin: "python", cli: "ems_pipeline", cliMode: "bin" })
 });
 
@@ -69,6 +72,21 @@ const EvalSchema = z.object({
 });
 
 const Agent2RunSchema = z.object({
+  session_path: z.string(),
+  payer_id: z.string().optional(),
+  out_dir: z.string(),
+  env: CommonEnvSchema.default({ pythonBin: "python", cli: "ems_pipeline", cliMode: "bin" })
+});
+
+const Agent3RunSchema = z.object({
+  session_path: z.string(),
+  payer_id: z.string().optional(),
+  out_dir: z.string(),
+  max_remediation_loops: z.number().int().min(0).default(1),
+  env: CommonEnvSchema.default({ pythonBin: "python", cli: "ems_pipeline", cliMode: "bin" })
+});
+
+const Agent4RunSchema = z.object({
   session_path: z.string(),
   payer_id: z.string().optional(),
   out_dir: z.string(),
@@ -175,6 +193,30 @@ server.tool(
   async (args: z.infer<typeof Agent2RunSchema>) => {
     try {
       return ok(await agent2Run(args as any));
+    } catch (e) {
+      return err(e);
+    }
+  }
+);
+
+server.tool(
+  "ems.agent4_run",
+  Agent4RunSchema.shape,
+  async (args: z.infer<typeof Agent4RunSchema>) => {
+    try {
+      return ok(await agent4Run(args as any));
+    } catch (e) {
+      return err(e);
+    }
+  }
+);
+
+server.tool(
+  "ems.agent3_run",
+  Agent3RunSchema.shape,
+  async (args: z.infer<typeof Agent3RunSchema>) => {
+    try {
+      return ok(await agent3Run(args as any));
     } catch (e) {
       return err(e);
     }

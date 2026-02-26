@@ -25,6 +25,19 @@ async function readJson(path: string) {
 }
 
 export const ToolSchemas = {
+  agent4_run: z.object({
+    session_path: z.string(),
+    payer_id: z.string().optional(),
+    out_dir: z.string(),
+    env: CommonEnv
+  }),
+  agent3_run: z.object({
+    session_path: z.string(),
+    payer_id: z.string().optional(),
+    out_dir: z.string(),
+    max_remediation_loops: z.number().int().min(0).default(1),
+    env: CommonEnv
+  }),
   agent2_run: z.object({
     session_path: z.string(),
     payer_id: z.string().optional(),
@@ -73,6 +86,7 @@ export const ToolSchemas = {
     bandpass: z.boolean().default(false),
     denoise: z.boolean().default(false),
     model: z.string().optional(),
+    payer_id: z.string().optional(),
     env: CommonEnv
   }),
   eval: z.object({
@@ -148,48 +162,107 @@ export async function buildClaim(input: z.infer<typeof ToolSchemas.build_claim>)
 }
 
 export async function runPipeline(input: z.infer<typeof ToolSchemas.run_pipeline>) {
-  // End-to-end orchestration using the individual CLI commands
+  // Delegates to the supervised orchestrator CLI (ems_pipeline run).
+  // Backward-compatible: returns the same top-level fields as before
+  // (claim, paths, encounter_id, session_path) plus submitted and agents_run.
   const baseDir = input.out_dir.replace(/\/$/, "");
   const outTranscript = `${baseDir}/transcript.json`;
   const outEntities = `${baseDir}/entities.json`;
   const outClaim = `${baseDir}/claim.json`;
   const outSession = `${baseDir}/session.json`;
 
-  // Unique identifier for this pipeline run; wired through to the session file.
-  const encounter_id = randomUUID();
-
   await fs.mkdir(input.out_dir, { recursive: true });
 
-  await transcribeAudio({
-    audio_path: input.audio_path,
-    out_path: outTranscript,
-    bandpass: input.bandpass,
-    denoise: input.denoise,
-    model: input.model,
-    env: input.env
-  });
+  const env = input.env;
+  const { cmd, baseArgs } = cliCommand(env);
+  const args = [...baseArgs, "run", input.audio_path, "--out-dir", input.out_dir];
+  if (input.bandpass) args.push("--bandpass");
+  if (input.denoise) args.push("--denoise");
+  if (input.payer_id) args.push("--payer-id", input.payer_id);
 
-  await extractEntities({
-    transcript_json: outTranscript,
-    out_path: outEntities,
-    env: input.env
-  });
+  const extraEnv: Record<string, string> = {};
+  if (input.model) extraEnv["EMS_ASR_MODEL"] = input.model;
 
-  await buildClaim({
-    entities_json: outEntities,
-    out_path: outClaim,
-    env: input.env
-  });
+  const res = await execCmd(cmd, args, { cwd: env.workdir, env: extraEnv });
+  assertOk(res, "run_pipeline");
 
-  // Return parsed claim for convenience
-  const claim = await readJson(outClaim);
+  const summary = JSON.parse(res.stdout.trim());
+
+  // Read session.json and reconstruct backward-compatible claim object.
+  const session = await readJson(outSession);
+  const claim = {
+    claim_id: session.claim_id ?? null,
+    fields: {
+      code_suggestions: session.code_suggestions ?? [],
+      report_draft: session.report_draft ?? null
+    }
+  };
+
   return {
     ok: true,
     out_dir: input.out_dir,
     claim,
+    // paths kept for backward compatibility; outTranscript/outEntities/outClaim
+    // are no longer written by the orchestrator but callers may still reference them.
     paths: { outTranscript, outEntities, outClaim, outSession },
-    encounter_id,
-    session_path: outSession
+    encounter_id: summary.encounter_id as string,
+    session_path: summary.session_path as string,
+    submitted: summary.submitted as boolean,
+    agents_run: summary.agents_run as string[]
+  };
+}
+
+export async function agent4Run(input: z.infer<typeof ToolSchemas.agent4_run>) {
+  const env = input.env;
+  const { cmd, baseArgs } = cliCommand(env);
+
+  const args = [
+    ...baseArgs,
+    "agent4",
+    input.session_path,
+    "--out-dir", input.out_dir
+  ];
+  if (input.payer_id) args.push("--payer-id", input.payer_id);
+
+  const res = await execCmd(cmd, args, { cwd: env.workdir });
+  assertOk(res, "agent4_run");
+
+  const summary = JSON.parse(res.stdout.trim());
+  return {
+    ok: true,
+    session_path: summary.session_path as string,
+    encounter_id: summary.encounter_id as string,
+    strategy_chosen: summary.strategy_chosen as string,
+    appeal_script_length: summary.appeal_script_length as number,
+    voice_session_id: (summary.voice_session_id ?? null) as string | null
+  };
+}
+
+export async function agent3Run(input: z.infer<typeof ToolSchemas.agent3_run>) {
+  const env = input.env;
+  const { cmd, baseArgs } = cliCommand(env);
+
+  const args = [
+    ...baseArgs,
+    "agent3",
+    input.session_path,
+    "--out-dir", input.out_dir,
+    "--max-remediation-loops", String(input.max_remediation_loops ?? 1)
+  ];
+  if (input.payer_id) args.push("--payer-id", input.payer_id);
+
+  const res = await execCmd(cmd, args, { cwd: env.workdir });
+  assertOk(res, "agent3_run");
+
+  const summary = JSON.parse(res.stdout.trim());
+  return {
+    ok: true,
+    session_path: summary.session_path as string,
+    encounter_id: summary.encounter_id as string,
+    submitted: summary.submitted as boolean,
+    flags_count: summary.flags_count as number,
+    remediation_requested: summary.remediation_requested as boolean,
+    remediation_notes: summary.remediation_notes as string[]
   };
 }
 

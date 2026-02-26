@@ -282,7 +282,7 @@ def test_tag_citation_map_no_segment_id_in_attributes() -> None:
     report = "Patient has nausea."
     result = tag_citation_map(report, entities)
     assert "nausea" in result
-    assert result["nausea"] == []  # no segment_id → empty list
+    assert result["nausea"] == ["unknown"]
 
 
 def test_tag_citation_map_empty_report_returns_empty() -> None:

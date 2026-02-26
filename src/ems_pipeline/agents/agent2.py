@@ -16,7 +16,8 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict
 
 from ems_pipeline.claim.builder import build_claim as _build_claim_from_transcript
-from ems_pipeline.models import EntitiesDocument, Transcript
+from ems_pipeline.context_utils import tag_citations
+from ems_pipeline.models import Transcript
 from ems_pipeline.rag import (
     retrieve_coding_guidelines,
     retrieve_patient_history,
@@ -33,6 +34,9 @@ class Agent2Options(BaseModel):
     # STUB: inject real LLM client (e.g., anthropic.Anthropic()) when live.
     llm_client: Any | None = None
     payer_id: str | None = None
+    # Remediation notes injected by the orchestrator on re-runs after Agent-3
+    # validation failures.  Passed through to the LLM prompt when live.
+    additional_context: list[str] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -274,29 +278,7 @@ def tag_citation_map(
         normalized value appears in the report.  Entities with no normalized
         value or not found in the report are omitted.
     """
-    report_lower = report_draft.lower()
-    citation_map: dict[str, list[str]] = {}
-
-    for ent in entities:
-        normalized = ent.normalized
-        if not normalized:
-            continue
-        if normalized.lower() not in report_lower:
-            continue
-
-        seg_id = (
-            ent.attributes.get("segment_id")
-            if isinstance(ent.attributes, dict)
-            else None
-        )
-
-        if normalized not in citation_map:
-            citation_map[normalized] = []
-
-        if seg_id and seg_id not in citation_map[normalized]:
-            citation_map[normalized].append(seg_id)
-
-    return citation_map
+    return tag_citations(report_draft, entities, segments=[])
 
 
 # ---------------------------------------------------------------------------
@@ -405,7 +387,11 @@ def run(
     code_suggestions = llm_codes if llm_codes else base_codes
 
     # --- Step 6: Citation chain tagging ---
-    citation_map = tag_citation_map(report_draft, session.extracted_terms or []) or None
+    citation_map = tag_citations(
+        report_draft,
+        session.extracted_terms or [],
+        session.transcript_segments or [],
+    ) or None
 
     # --- Step 7: Write Agent-2 fields into session ---
     return session.write_agent2(

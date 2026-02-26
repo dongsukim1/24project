@@ -6,6 +6,7 @@ progressively enriched by each agent stage via the .write_agent* methods.
 
 from __future__ import annotations
 
+import json
 import uuid
 from collections import defaultdict
 from pathlib import Path
@@ -13,7 +14,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
-from ems_pipeline.models import Entity, EntitiesDocument, Segment, Transcript
+from ems_pipeline.models import EntitiesDocument, Entity, Segment, Transcript
 
 
 class SessionContext(BaseModel):
@@ -46,11 +47,12 @@ class SessionContext(BaseModel):
     payer_id: str | None = None
     submission_status: str | None = None
     pre_submission_flags: list[dict[str, Any]] | None = None
+    remediation_request: dict[str, Any] | None = None  # {notes, payer_id, loop_count}
 
     # --- Agent-4: Denial / Appeal ---
     denial_reason: str | None = None
     appeal_strategy: str | None = None
-    appeal_history: list[dict[str, Any]] | None = None
+    appeal_history: list[dict[str, Any]] | None = None  # {denial_id, strategy, outcome, ...}
 
     # --- Factory ---
 
@@ -134,7 +136,7 @@ class SessionContext(BaseModel):
     def write_agent3(
         self,
         claim_id: str,
-        payer_id: str,
+        payer_id: str | None,
         status: str,
         flags: list[dict[str, Any]],
     ) -> SessionContext:
@@ -160,6 +162,28 @@ class SessionContext(BaseModel):
                 "appeal_strategy": strategy,
             }
         )
+
+    # --- Memory footprint helpers ---
+
+    def estimate_size_bytes(self) -> int:
+        """Approximate serialized payload size for large-field transport checks."""
+        payload = self.model_dump(mode="json")
+        total_bytes = 0
+        for value in payload.values():
+            if isinstance(value, (str, list)):
+                total_bytes += len(json.dumps(value))
+        return total_bytes
+
+    def trim_for_transport(self, max_bytes: int = 50_000) -> dict[str, Any]:
+        """Return compact transport payload when the session grows too large.
+
+        # STUB: real token counting should use tiktoken or Anthropic token APIs.
+        """
+        if self.estimate_size_bytes() > max_bytes:
+            from ems_pipeline.context_utils import compress_agent3_output
+
+            return compress_agent3_output(self)
+        return self.model_dump(mode="json")
 
     # --- Serialization ---
 
