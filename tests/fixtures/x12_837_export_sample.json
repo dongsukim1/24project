@@ -1,0 +1,122 @@
+{
+  "format": "x12_837",
+  "is_valid": false,
+  "missing_required": [
+    "billing.billing_provider_npi"
+  ],
+  "missing_optional": [
+    "billing.rendering_provider_npi",
+    "billing.billing_provider_tax_id",
+    "encounter.service_date or service_start_datetime"
+  ],
+  "warnings": [],
+  "data": {
+    "transaction_set": "837",
+    "implementation_convention": "005010X222A2",
+    "loop_2000a_billing_provider": {
+      "NM1_85": {
+        "entity_id": "85",
+        "entity_type": "2",
+        "org_name": "Metro EMS Agency",
+        "id_qualifier": "XX",
+        "id": null
+      },
+      "REF_EI": {
+        "qualifier": "EI",
+        "value": null
+      }
+    },
+    "loop_2000b_subscriber": {
+      "SBR": {
+        "payer_responsibility": "P",
+        "relationship_code": "18",
+        "member_id": "M123456",
+        "plan_type": "BL"
+      },
+      "NM1_IL": {
+        "entity_id": "IL",
+        "entity_type": "1",
+        "last_name": "Smith",
+        "first_name": "John",
+        "id_qualifier": "MI",
+        "id": "M123456"
+      },
+      "NM1_PR": {
+        "entity_id": "PR",
+        "entity_type": "2",
+        "org_name": "Acme Insurance",
+        "id_qualifier": "PI",
+        "id": "PAYER01"
+      }
+    },
+    "loop_2300_claim": {
+      "CLM": {
+        "clm01_claim_id": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+        "clm02_total_charge": 850.0,
+        "clm05_facility_code": "41",
+        "clm05_claim_type": "professional",
+        "clm11_assignment": "Y"
+      },
+      "DTP_472": {
+        "qualifier": "472",
+        "format": "D8",
+        "date": null
+      },
+      "HI": [
+        {
+          "qualifier": "ABK",
+          "code": "R07.9",
+          "display": "Chest pain, unspecified"
+        }
+      ],
+      "NM1_82": {
+        "entity_id": "82",
+        "entity_type": "1",
+        "id_qualifier": "XX",
+        "id": null
+      }
+    },
+    "loop_2400_service_lines": [
+      {
+        "LX": 1,
+        "SV1": {
+          "procedure_code": "A0427",
+          "modifiers": [
+            "QM"
+          ],
+          "charge_amount": 850.0,
+          "units": 1.0,
+          "place_of_service": "41",
+          "diagnosis_pointers": [
+            1
+          ]
+        },
+        "DTP_472": {
+          "qualifier": "472",
+          "format": "D8",
+          "date": null
+        }
+      }
+    ],
+    "_meta": {
+      "source_claim_id": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+      "schema_version": "1.0"
+    },
+    "loop_2000c_patient": {
+      "PAT": {
+        "relationship_code": "19"
+      },
+      "NM1_QC": {
+        "entity_id": "QC",
+        "entity_type": "1",
+        "last_name": "Smith",
+        "first_name": "John"
+      },
+      "DMG": {
+        "date_format": "D8",
+        "dob": null,
+        "sex": "M"
+      }
+    }
+  }
+}

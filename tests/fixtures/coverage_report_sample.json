@@ -1,0 +1,143 @@
+{
+  "schema_version": "1.0",
+  "claim_id": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+  "canonical_field_summary": {
+    "coverage": "28/47 (59%)",
+    "filled": [
+      "patient.full_name",
+      "patient.age_years",
+      "patient.sex_at_birth",
+      "patient.address",
+      "subscriber.member_id",
+      "subscriber.group_id",
+      "subscriber.payer_id",
+      "subscriber.payer_name",
+      "subscriber.plan_type",
+      "subscriber.relationship",
+      "encounter.run_number",
+      "encounter.cad_incident_number",
+      "encounter.pcr_number",
+      "encounter.agency_id",
+      "unit.unit_id",
+      "unit.crew",
+      "clinical.chief_complaint",
+      "clinical.primary_impression",
+      "clinical.symptoms",
+      "clinical.vitals",
+      "clinical.procedures",
+      "clinical.medications",
+      "transport.origin_address",
+      "transport.destination_name",
+      "transport.disposition_status",
+      "billing.service_lines",
+      "billing.icd10_diagnoses",
+      "billing.medical_necessity_notes"
+    ],
+    "missing": [
+      "patient.dob",
+      "patient.gender_identity",
+      "patient.race",
+      "patient.ethnicity",
+      "patient.phone",
+      "encounter.service_date",
+      "timeline.psap_call",
+      "timeline.dispatch_notified",
+      "timeline.unit_enroute",
+      "timeline.unit_on_scene",
+      "timeline.patient_contact",
+      "timeline.transport_begin",
+      "timeline.arrive_destination",
+      "timeline.transfer_of_care",
+      "clinical.allergies",
+      "clinical.pmh",
+      "transport.destination_facility_id",
+      "billing.billing_provider_npi",
+      "billing.rendering_provider_npi"
+    ],
+    "detail": {
+      "patient.full_name": true,
+      "patient.dob": false,
+      "patient.age_years": true,
+      "patient.sex_at_birth": true,
+      "patient.gender_identity": false,
+      "patient.race": false,
+      "patient.ethnicity": false,
+      "patient.address": true,
+      "patient.phone": false,
+      "subscriber.member_id": true,
+      "subscriber.group_id": true,
+      "subscriber.payer_id": true,
+      "subscriber.payer_name": true,
+      "subscriber.plan_type": true,
+      "subscriber.relationship": true,
+      "encounter.run_number": true,
+      "encounter.cad_incident_number": true,
+      "encounter.pcr_number": true,
+      "encounter.agency_id": true,
+      "encounter.service_date": false,
+      "unit.unit_id": true,
+      "unit.crew": true,
+      "timeline.psap_call": false,
+      "timeline.dispatch_notified": false,
+      "timeline.unit_enroute": false,
+      "timeline.unit_on_scene": false,
+      "timeline.patient_contact": false,
+      "timeline.transport_begin": false,
+      "timeline.arrive_destination": false,
+      "timeline.transfer_of_care": false,
+      "clinical.chief_complaint": true,
+      "clinical.primary_impression": true,
+      "clinical.symptoms": true,
+      "clinical.vitals": true,
+      "clinical.procedures": true,
+      "clinical.medications": true,
+      "clinical.allergies": false,
+      "clinical.pmh": false,
+      "transport.origin_address": true,
+      "transport.destination_name": true,
+      "transport.destination_facility_id": false,
+      "transport.disposition_status": true,
+      "billing.service_lines": true,
+      "billing.icd10_diagnoses": true,
+      "billing.billing_provider_npi": false,
+      "billing.rendering_provider_npi": false,
+      "billing.medical_necessity_notes": true
+    }
+  },
+  "formats": {
+    "nemsis": {
+      "is_valid": false,
+      "missing_required": [
+        "eTimes.01 (psap_call_datetime)",
+        "eTimes.05 (unit_on_scene_datetime)",
+        "eTimes.12 (transfer_of_care_datetime)"
+      ],
+      "missing_optional": [
+        "eTimes.09 (transport_begin_datetime)"
+      ],
+      "warnings": [
+        "eSituation.11: primary_impression code is placeholder 'UNKNOWN' \u2014 requires manual ICD-10-CM mapping"
+      ]
+    },
+    "x12_837": {
+      "is_valid": false,
+      "missing_required": [
+        "billing.billing_provider_npi"
+      ],
+      "missing_optional": [
+        "billing.rendering_provider_npi",
+        "billing.billing_provider_tax_id",
+        "encounter.service_date or service_start_datetime"
+      ],
+      "warnings": []
+    },
+    "fhir": {
+      "is_valid": true,
+      "missing_required": [],
+      "missing_optional": [],
+      "warnings": [
+        "Encounter.diagnosis code is placeholder 'UNKNOWN' \u2014 requires ICD-10-CM mapping before submission"
+      ]
+    }
+  }
+}

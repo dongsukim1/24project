@@ -23,8 +23,15 @@ from ems_pipeline.agents.agent4 import run as agent4_run
 from ems_pipeline.orchestrator import OrchestratorOptions
 from ems_pipeline.orchestrator import run_pipeline_supervised
 from ems_pipeline.claim import build_claim
+from ems_pipeline.claim.canonical import CanonicalClaim
+from ems_pipeline.claim.enrich import enrich_canonical_claim
+from ems_pipeline.claim.timeline import build_events
 from ems_pipeline.eval.harness import evaluate as eval_entities
 from ems_pipeline.eval.harness import format_report as format_eval_report
+from ems_pipeline.exporters.nemsis import export_nemsis
+from ems_pipeline.exporters.x12_837 import export_x12_837
+from ems_pipeline.exporters.fhir import export_fhir
+from ems_pipeline.exporters.coverage import generate_coverage_report
 from ems_pipeline.extract import extract_entities
 from ems_pipeline.io_utils import read_model, write_model
 from ems_pipeline.models import Claim, EntitiesDocument, Transcript
@@ -81,12 +88,69 @@ def extract_cmd(
 @app.command("build-claim")
 def build_claim_cmd(
     entities_json: Path = typer.Argument(..., exists=True, readable=True),
-    out: Path = typer.Option(..., "--out", "-o", help="Output proto-claim JSON path."),
+    out: Path = typer.Option(..., "--out", "-o", help="Output claim JSON path."),
+    schema_version: str = typer.Option(
+        "0.1",
+        "--schema-version",
+        help="Claim schema version to produce: '0.1' (legacy proto-claim) or '1.0' (canonical).",
+    ),
+    transcript_json: Path | None = typer.Option(
+        None,
+        "--transcript",
+        exists=True,
+        readable=True,
+        help="Transcript JSON path (required when --schema-version=1.0).",
+    ),
+    payer_id: str | None = typer.Option(
+        None,
+        "--payer-id",
+        help="Payer ID to embed in the canonical claim subscriber section.",
+    ),
 ) -> None:
-    """Build a structured proto-claim JSON from extracted entities."""
+    """Build a structured claim JSON from extracted entities.
+
+    With --schema-version=0.1 (default) produces the legacy proto-claim
+    (Claim model).  With --schema-version=1.0 produces the canonical claim
+    (CanonicalClaim model) using the full entity + transcript context.
+    """
 
     entities_doc = read_model(entities_json, EntitiesDocument)
 
+    if schema_version == "1.0":
+        if transcript_json is None:
+            typer.echo(
+                "Error: --transcript is required when --schema-version=1.0", err=True
+            )
+            raise typer.Exit(code=1)
+        transcript = read_model(transcript_json, Transcript)
+        entities = entities_doc.entities
+        events = build_events(transcript, entities)
+        # Build legacy claim first so we have a stable claim_id
+        legacy_claim = build_claim(entities_doc)
+        canonical = enrich_canonical_claim(
+            claim_id=legacy_claim.claim_id,
+            transcript=transcript,
+            entities=entities,
+            events=events,
+            legacy_claim=legacy_claim,
+            payer_id=payer_id,
+        )
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(
+            canonical.model_dump_json(indent=2), encoding="utf-8"
+        )
+        typer.echo(
+            json.dumps(
+                {
+                    "schema_version": "1.0",
+                    "claim_id": canonical.claim_id,
+                    "out": str(out),
+                }
+            )
+        )
+        return
+
+    # Legacy v0.1 path
     try:
         claim = build_claim(entities_doc)
     except NotImplementedError as exc:
@@ -94,6 +158,77 @@ def build_claim_cmd(
         raise typer.Exit(code=2) from exc
 
     write_model(out, claim)
+
+
+@app.command("export-claim")
+def export_claim_cmd(
+    canonical_json: Path = typer.Argument(
+        ..., exists=True, readable=True, help="Canonical claim JSON (schema_version=1.0)."
+    ),
+    format: str = typer.Option(
+        ...,
+        "--format",
+        "-f",
+        help="Export format: nemsis | x12 | fhir | coverage.",
+    ),
+    out: Path | None = typer.Option(
+        None,
+        "--out",
+        "-o",
+        help="Output path.  Defaults to stdout.",
+    ),
+) -> None:
+    """Export a canonical claim to NEMSIS, X12 837P, FHIR R4, or coverage report.
+
+    Examples::
+
+        ems_pipeline export-claim canonical.json --format nemsis --out nemsis.json
+        ems_pipeline export-claim canonical.json --format x12   --out 837p.json
+        ems_pipeline export-claim canonical.json --format fhir  --out bundle.json
+        ems_pipeline export-claim canonical.json --format coverage
+    """
+    raw = json.loads(canonical_json.read_text(encoding="utf-8"))
+    canonical = CanonicalClaim.model_validate(raw)
+
+    fmt = format.strip().lower()
+    if fmt == "nemsis":
+        result = export_nemsis(canonical)
+    elif fmt in ("x12", "x12_837", "837"):
+        result = export_x12_837(canonical)
+    elif fmt == "fhir":
+        result = export_fhir(canonical)
+    elif fmt == "coverage":
+        report = generate_coverage_report(canonical)
+        payload = json.dumps(report, indent=2, default=str)
+        if out is None:
+            typer.echo(payload)
+        else:
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(payload + "\n", encoding="utf-8")
+        return
+    else:
+        typer.echo(
+            f"Unknown format '{fmt}'. Choose: nemsis | x12 | fhir | coverage",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    payload = json.dumps(result.to_dict(), indent=2, default=str)
+    if out is None:
+        typer.echo(payload)
+    else:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(payload + "\n", encoding="utf-8")
+        typer.echo(
+            json.dumps(
+                {
+                    "format": result.format,
+                    "is_valid": result.is_valid,
+                    "missing_required_count": len(result.missing_required),
+                    "out": str(out),
+                }
+            )
+        )
 
 
 @app.command("eval")
@@ -303,3 +438,4 @@ def _typecheck_imports() -> None:
     _: type[Transcript] = Transcript
     _: type[EntitiesDocument] = EntitiesDocument
     _: type[Claim] = Claim
+    _: type[CanonicalClaim] = CanonicalClaim
