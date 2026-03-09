@@ -105,3 +105,42 @@ def test_merge_chunks_keeps_different_segments() -> None:
     e2 = _entity(segment_id="seg_0002")
     result = merge_chunks([[e1], [e2]])
     assert len(result) == 2
+
+
+# --- build_extraction_prompt & ENTITY_TOOL_DEFINITION tests ---
+
+from ems_pipeline.llm.extractor import build_extraction_prompt, ENTITY_TOOL_DEFINITION
+
+
+def test_build_extraction_prompt_includes_segments() -> None:
+    segments = [
+        Segment(start=0.0, end=5.0, speaker="spk0", text="chest pain onset", confidence=0.9),
+        Segment(start=5.0, end=10.0, speaker="spk1", text="SpO2 92%", confidence=0.95),
+    ]
+    segment_ids = ["seg_0000", "seg_0001"]
+    prompt = build_extraction_prompt(segments, segment_ids)
+    assert "[seg_0000]" in prompt
+    assert "[seg_0001]" in prompt
+    assert "(spk0)" in prompt
+    assert "chest pain onset" in prompt
+
+
+def test_build_extraction_prompt_no_timestamps_in_output() -> None:
+    segments = [
+        Segment(start=123.456, end=130.0, speaker="spk0", text="hello", confidence=0.9),
+    ]
+    prompt = build_extraction_prompt(segments, ["seg_0000"])
+    assert "123.456" not in prompt
+
+
+def test_entity_tool_definition_has_required_fields() -> None:
+    schema = ENTITY_TOOL_DEFINITION
+    assert schema["name"] == "record_entities"
+    props = schema["input_schema"]["properties"]["entities"]["items"]["properties"]
+    assert "type" in props
+    assert "text" in props
+    assert "segment_id" in props
+    assert "confidence" in props
+    assert "negated" in props
+    assert "experiencer" in props
+    assert "temporality" in props
