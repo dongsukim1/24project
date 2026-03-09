@@ -53,3 +53,55 @@ def test_adaptive_chunk_prefers_speaker_turn_boundary() -> None:
     assert len(chunks) == 2
     # First chunk should end at or near the speaker boundary
     assert all(s.speaker == "spk0" for s in chunks[0][:-1])  # overlap excluded
+
+
+# --- merge_chunks tests ---
+
+from ems_pipeline.llm.extractor import merge_chunks
+from ems_pipeline.models import Entity
+
+
+def _entity(
+    entity_type: str = "SYMPTOM",
+    text: str = "chest pain",
+    segment_id: str = "seg_0001",
+    confidence: float = 0.9,
+) -> Entity:
+    return Entity(
+        type=entity_type,
+        text=text,
+        normalized=text,
+        start=0.0,
+        end=1.0,
+        speaker="spk0",
+        confidence=confidence,
+        attributes={"segment_id": segment_id, "source": "llm"},
+    )
+
+
+def test_merge_chunks_single_chunk_passthrough() -> None:
+    entities = [_entity(), _entity(text="SOB", entity_type="SYMPTOM")]
+    result = merge_chunks([entities])
+    assert len(result) == 2
+
+
+def test_merge_chunks_dedup_same_segment_type_text() -> None:
+    e1 = _entity(confidence=0.9)
+    e2 = _entity(confidence=0.7)  # same segment, type, text — lower confidence
+    result = merge_chunks([[e1], [e2]])
+    assert len(result) == 1
+    assert result[0].confidence == 0.9
+
+
+def test_merge_chunks_keeps_different_types() -> None:
+    e1 = _entity(entity_type="SYMPTOM")
+    e2 = _entity(entity_type="CONDITION", segment_id="seg_0001")
+    result = merge_chunks([[e1], [e2]])
+    assert len(result) == 2
+
+
+def test_merge_chunks_keeps_different_segments() -> None:
+    e1 = _entity(segment_id="seg_0001")
+    e2 = _entity(segment_id="seg_0002")
+    result = merge_chunks([[e1], [e2]])
+    assert len(result) == 2
