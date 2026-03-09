@@ -56,7 +56,7 @@ def _speaker_for_interval(
     - If *end* < *start* (malformed ASR output), they are swapped before comparison.
     - Turns may be any iterable; the list is materialised once internally.
     """
-    turns_list: list[SpeakerTurn] = list(turns)
+    turns_list: list[SpeakerTurn] = turns if isinstance(turns, list) else list(turns)
     if not turns_list:
         return "spk0"
 

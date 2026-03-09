@@ -44,7 +44,7 @@ from __future__ import annotations
 from typing import Any
 
 from ems_pipeline.claim.canonical import CanonicalClaim
-from ems_pipeline.exporters import ExportResult
+from ems_pipeline.exporters import ExportResult, fmt_date as _fmt_date_shared, fmt_name
 
 # ---------------------------------------------------------------------------
 # Required fields for a valid 837P (MVP subset)
@@ -84,22 +84,7 @@ _PLAN_TYPE_MAP = {
 
 def _fmt_date(dt: Any) -> str | None:
     """Format a date or datetime as YYYYMMDD for X12."""
-    if dt is None:
-        return None
-    try:
-        return dt.strftime("%Y%m%d")
-    except AttributeError:
-        return str(dt)[:10].replace("-", "")
-
-
-def _fmt_name(full_name: str | None) -> tuple[str | None, str | None]:
-    """Split 'First Last' → (last, first)."""
-    if not full_name:
-        return None, None
-    parts = full_name.strip().split(" ", 1)
-    if len(parts) == 2:
-        return parts[1], parts[0]
-    return parts[0], None
+    return _fmt_date_shared(dt, separator=False)
 
 
 # ---------------------------------------------------------------------------
@@ -129,7 +114,7 @@ def _build_2000b(claim: CanonicalClaim) -> dict[str, Any]:
     """Loop 2000B – Subscriber."""
     s = claim.subscriber
     p = claim.patient
-    last, first = _fmt_name(s.subscriber_name or p.full_name)
+    last, first = fmt_name(s.subscriber_name or p.full_name)
     plan_code = _PLAN_TYPE_MAP.get((s.plan_type or "").lower(), "ZZ")
     return {
         "SBR": {
@@ -162,7 +147,7 @@ def _build_2000c(claim: CanonicalClaim) -> dict[str, Any] | None:
     s = claim.subscriber
     if s.relationship_to_patient in ("self", None) and not p.full_name:
         return None
-    last, first = _fmt_name(p.full_name)
+    last, first = fmt_name(p.full_name)
     dob = _fmt_date(p.dob)
     sex = _SEX_MAP.get(p.sex_at_birth or "", "U")
     return {

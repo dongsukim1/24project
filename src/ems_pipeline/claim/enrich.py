@@ -33,11 +33,11 @@ from collections.abc import Sequence
 from typing import Any
 
 from ems_pipeline.claim.builder import (
-    _all_entities,
-    _evidence_for_entity,
-    _first_entity,
-    _segment_ids,
-    _unique_strs,
+    all_entities,
+    evidence_for_entity,
+    first_entity,
+    segment_ids,
+    unique_strs,
 )
 from ems_pipeline.claim.canonical import (
     Address,
@@ -125,9 +125,9 @@ def _map_patient(
 ) -> tuple[PatientInfo, list[CanonicalProvenance]]:
     provenance: list[CanonicalProvenance] = []
 
-    age_result = _first_entity(entities, {"age", "patient_age"})
-    sex_result = _first_entity(entities, {"sex", "gender", "patient_sex"})
-    name_result = _first_entity(entities, {"patient_name", "name"})
+    age_result = first_entity(entities, {"age", "patient_age"})
+    sex_result = first_entity(entities, {"sex", "gender", "patient_sex"})
+    name_result = first_entity(entities, {"patient_name", "name"})
 
     age_years: int | None = None
     age_hint: str | None = None
@@ -136,7 +136,7 @@ def _map_patient(
         age_hint = ent.normalized or ent.text
         if age_hint:
             age_years = _try_parse_age(age_hint)
-        for s in _evidence_for_entity(transcript, ent):
+        for s in evidence_for_entity(transcript, ent):
             provenance.append(_prov(s, i, "patient.age_years", ent.confidence))
 
     sex_at_birth: str | None = None
@@ -144,14 +144,14 @@ def _map_patient(
         i, ent = sex_result
         raw = (ent.normalized or ent.text or "").strip().lower()
         sex_at_birth = _SEX_NORM.get(raw)
-        for s in _evidence_for_entity(transcript, ent):
+        for s in evidence_for_entity(transcript, ent):
             provenance.append(_prov(s, i, "patient.sex_at_birth", ent.confidence))
 
     full_name: str | None = None
     if name_result is not None:
         i, ent = name_result
         full_name = ent.normalized or ent.text
-        for s in _evidence_for_entity(transcript, ent):
+        for s in evidence_for_entity(transcript, ent):
             provenance.append(_prov(s, i, "patient.full_name", ent.confidence))
 
     patient = PatientInfo(
@@ -175,11 +175,11 @@ def _map_clinical(
     provenance: list[CanonicalProvenance] = []
 
     # Chief complaint / primary impression
-    cc_result = _first_entity(
+    cc_result = first_entity(
         entities, {"chief_complaint", "complaint", "primary_impression"}
     )
     if cc_result is None:
-        cc_result = _first_entity(entities, {"symptom"})
+        cc_result = first_entity(entities, {"symptom"})
 
     chief_complaint: str | None = None
     primary_impression: CodedValue | None = None
@@ -194,21 +194,21 @@ def _map_clinical(
                 confidence=ent.confidence,
                 source="extracted",
             )
-        for s in _evidence_for_entity(transcript, ent):
+        for s in evidence_for_entity(transcript, ent):
             provenance.append(_prov(s, i, "clinical.chief_complaint", ent.confidence))
 
     # Symptoms
     symptoms: list[str] = []
-    for i, ent in _all_entities(entities, {"symptom"}):
+    for i, ent in all_entities(entities, {"symptom"}):
         text = ent.normalized or ent.text
         if text:
             symptoms.append(text)
-        for s in _evidence_for_entity(transcript, ent):
+        for s in evidence_for_entity(transcript, ent):
             provenance.append(_prov(s, i, "clinical.symptoms", ent.confidence))
 
     # Vitals
     vitals: list[VitalSign] = []
-    for i, ent in _all_entities(
+    for i, ent in all_entities(
         entities, {"vital", "vitals", "vital_bp", "vital_spo2"}
     ):
         attrs: dict[str, Any] = (
@@ -225,19 +225,19 @@ def _map_clinical(
             unit = "mmHg"
         if not unit and ent_type == "vital_spo2":
             unit = "%"
-        ev_ids = _evidence_for_entity(transcript, ent)
+        ev_ids = evidence_for_entity(transcript, ent)
         vitals.append(VitalSign(name=str(name), value=value, unit=unit, evidence_segment_ids=ev_ids))
         for s in ev_ids:
             provenance.append(_prov(s, i, "clinical.vitals", ent.confidence))
 
     # Medications
     medications: list[Medication] = []
-    for i, ent in _all_entities(entities, {"medication"}):
+    for i, ent in all_entities(entities, {"medication"}):
         drug = ent.normalized or ent.text or "UNKNOWN"
         attrs = ent.attributes if isinstance(ent.attributes, dict) else {}
         dose = attrs.get("dose")
         route = attrs.get("route")
-        ev_ids = _evidence_for_entity(transcript, ent)
+        ev_ids = evidence_for_entity(transcript, ent)
         medications.append(
             Medication(
                 drug=drug,
@@ -251,9 +251,9 @@ def _map_clinical(
 
     # Procedures
     procedures: list[Procedure] = []
-    for i, ent in _all_entities(entities, {"procedure", "intervention", "treatment"}):
+    for i, ent in all_entities(entities, {"procedure", "intervention", "treatment"}):
         name = ent.normalized or ent.text or "UNKNOWN"
-        ev_ids = _evidence_for_entity(transcript, ent)
+        ev_ids = evidence_for_entity(transcript, ent)
         procedures.append(Procedure(name=name, evidence_segment_ids=ev_ids))
         for s in ev_ids:
             provenance.append(_prov(s, i, "clinical.procedures", ent.confidence))
@@ -281,11 +281,11 @@ def _map_transport(
 ) -> tuple[TransportInfo, list[CanonicalProvenance]]:
     provenance: list[CanonicalProvenance] = []
 
-    disp_result = _first_entity(entities, {"disposition"})
-    dest_result = _first_entity(
+    disp_result = first_entity(entities, {"disposition"})
+    dest_result = first_entity(
         entities, {"destination", "destination_hint", "hospital"}
     )
-    origin_result = _first_entity(entities, {"location", "address", "cross_street"})
+    origin_result = first_entity(entities, {"location", "address", "cross_street"})
 
     disposition_status: str | None = None
     if disp_result is not None:
@@ -299,7 +299,7 @@ def _map_transport(
             disposition_status = "transported"
         else:
             disposition_status = norm or "unknown"
-        for s in _evidence_for_entity(transcript, ent):
+        for s in evidence_for_entity(transcript, ent):
             provenance.append(_prov(s, i, "transport.disposition_status", ent.confidence))
     elif any(e.get("type") in ("TRANSPORT_BEGIN", "ARRIVE_ED") for e in events):
         disposition_status = "transported"
@@ -308,7 +308,7 @@ def _map_transport(
     if dest_result is not None:
         i, ent = dest_result
         destination_name = ent.normalized or ent.text
-        for s in _evidence_for_entity(transcript, ent):
+        for s in evidence_for_entity(transcript, ent):
             provenance.append(_prov(s, i, "transport.destination_facility_name", ent.confidence))
 
     origin_address: Address | None = None
@@ -317,7 +317,7 @@ def _map_transport(
         text = ent.normalized or ent.text
         if text:
             origin_address = Address(street=text)
-        for s in _evidence_for_entity(transcript, ent):
+        for s in evidence_for_entity(transcript, ent):
             provenance.append(_prov(s, i, "transport.origin_address", ent.confidence))
 
     transport = TransportInfo(
@@ -339,21 +339,21 @@ def _map_unit(
 ) -> tuple[UnitInfo, list[CanonicalProvenance]]:
     provenance: list[CanonicalProvenance] = []
 
-    unit_results = _all_entities(entities, {"unit", "unit_id"})
-    crew_results = _all_entities(entities, {"crew", "crew_member", "provider"})
+    unit_results = all_entities(entities, {"unit", "unit_id"})
+    crew_results = all_entities(entities, {"crew", "crew_member", "provider"})
 
     unit_id: str | None = None
     if unit_results:
         i, ent = unit_results[0]
         unit_id = ent.normalized or ent.text
-        for s in _evidence_for_entity(transcript, ent):
+        for s in evidence_for_entity(transcript, ent):
             provenance.append(_prov(s, i, "unit.unit_id", ent.confidence))
 
     crew: list[CrewMember] = []
     for i, ent in crew_results:
         name = ent.normalized or ent.text
         crew.append(CrewMember(name=name))
-        for s in _evidence_for_entity(transcript, ent):
+        for s in evidence_for_entity(transcript, ent):
             provenance.append(_prov(s, i, "unit.crew", ent.confidence))
 
     return UnitInfo(unit_id=unit_id, crew=crew), provenance

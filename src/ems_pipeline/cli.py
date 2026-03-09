@@ -135,10 +135,7 @@ def build_claim_cmd(
             legacy_claim=legacy_claim,
             payer_id=payer_id,
         )
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(
-            canonical.model_dump_json(indent=2), encoding="utf-8"
-        )
+        write_model(out, canonical)
         typer.echo(
             json.dumps(
                 {
@@ -187,8 +184,7 @@ def export_claim_cmd(
         ems_pipeline export-claim canonical.json --format fhir  --out bundle.json
         ems_pipeline export-claim canonical.json --format coverage
     """
-    raw = json.loads(canonical_json.read_text(encoding="utf-8"))
-    canonical = CanonicalClaim.model_validate(raw)
+    canonical = read_model(canonical_json, CanonicalClaim)
 
     fmt = format.strip().lower()
     if fmt == "nemsis":

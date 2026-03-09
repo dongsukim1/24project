@@ -22,7 +22,7 @@ import uuid
 from typing import Any
 
 from ems_pipeline.claim.canonical import CanonicalClaim, VitalSign, Medication, Procedure
-from ems_pipeline.exporters import ExportResult
+from ems_pipeline.exporters import ExportResult, fmt_dt, fmt_date, fmt_name
 
 # ---------------------------------------------------------------------------
 # Required FHIR fields (MVP subset)
@@ -79,22 +79,6 @@ def _ref(resource_type: str, rid: str) -> dict[str, str]:
     return {"reference": f"{resource_type}/{rid}"}
 
 
-def _fmt_dt(dt: Any) -> str | None:
-    if dt is None:
-        return None
-    return dt.isoformat()
-
-
-def _fmt_date(dt: Any) -> str | None:
-    if dt is None:
-        return None
-    try:
-        return dt.strftime("%Y-%m-%d")
-    except AttributeError:
-        s = str(dt)
-        return s[:10] if len(s) >= 10 else s
-
-
 # ---------------------------------------------------------------------------
 # Resource builders
 # ---------------------------------------------------------------------------
@@ -107,9 +91,9 @@ def _build_patient(claim: CanonicalClaim, patient_id: str) -> dict[str, Any]:
         "id": patient_id,
         "meta": {"profile": ["http://hl7.org/fhir/us/core/StructureDefinition/us-core-patient"]},
     }
+    last, first = fmt_name(p.full_name)
     if p.full_name:
-        parts = p.full_name.split(" ", 1)
-        resource["name"] = [{"use": "official", "family": parts[-1], "given": [parts[0]]}]
+        resource["name"] = [{"use": "official", "family": last, "given": [first]}]
     else:
         resource["name"] = [{"use": "unknown", "text": "Unknown"}]
 
@@ -117,7 +101,7 @@ def _build_patient(claim: CanonicalClaim, patient_id: str) -> dict[str, Any]:
         resource["gender"] = _SEX_MAP.get(p.sex_at_birth, "unknown")
 
     if p.dob:
-        resource["birthDate"] = _fmt_date(p.dob)
+        resource["birthDate"] = fmt_date(p.dob)
     elif p.age_years is not None:
         resource["_birthDate"] = {"extension": [{"url": "age-estimate", "valueInteger": p.age_years}]}
 
@@ -165,13 +149,13 @@ def _build_encounter(
     enc = claim.encounter
     period: dict[str, Any] = {}
     if t.unit_on_scene_datetime:
-        period["start"] = _fmt_dt(t.unit_on_scene_datetime)
+        period["start"] = fmt_dt(t.unit_on_scene_datetime)
     elif t.patient_contact_datetime:
-        period["start"] = _fmt_dt(t.patient_contact_datetime)
+        period["start"] = fmt_dt(t.patient_contact_datetime)
     if t.transfer_of_care_datetime:
-        period["end"] = _fmt_dt(t.transfer_of_care_datetime)
+        period["end"] = fmt_dt(t.transfer_of_care_datetime)
     elif t.arrive_destination_datetime:
-        period["end"] = _fmt_dt(t.arrive_destination_datetime)
+        period["end"] = fmt_dt(t.arrive_destination_datetime)
 
     resource: dict[str, Any] = {
         "resourceType": "Encounter",
@@ -217,7 +201,7 @@ def _build_claim_resource(
 ) -> dict[str, Any]:
     b = claim.billing
     enc = claim.encounter
-    svc_date = _fmt_date(enc.service_date or enc.service_start_datetime)
+    svc_date = fmt_date(enc.service_date or enc.service_start_datetime)
 
     resource: dict[str, Any] = {
         "resourceType": "Claim",
@@ -331,7 +315,7 @@ def _build_observation(
             "system": "http://unitsofmeasure.org",
         }
     if vital.timestamp:
-        resource["effectiveDateTime"] = _fmt_dt(vital.timestamp)
+        resource["effectiveDateTime"] = fmt_dt(vital.timestamp)
     return resource
 
 
@@ -358,7 +342,7 @@ def _build_procedure(
         "encounter": _ref("Encounter", encounter_id),
     }
     if proc.timestamp:
-        resource["performedDateTime"] = _fmt_dt(proc.timestamp)
+        resource["performedDateTime"] = fmt_dt(proc.timestamp)
     return resource
 
 
@@ -383,7 +367,7 @@ def _build_medication_admin(
         "medicationCodeableConcept": {"coding": coding, "text": med.drug},
         "subject": _ref("Patient", patient_id),
         "context": _ref("Encounter", encounter_id),
-        "effectiveDateTime": _fmt_dt(med.timestamp) or "unknown",
+        "effectiveDateTime": fmt_dt(med.timestamp) or "unknown",
     }
     dosage: dict[str, Any] = {}
     if med.dose:

@@ -56,4 +56,35 @@ class ExportResult:
         }
 
 
-__all__ = ["ExportResult"]
+def fmt_dt(dt: Any) -> str | None:
+    """Format a datetime as ISO-8601, or return None if absent."""
+    if dt is None:
+        return None
+    return dt.isoformat()
+
+
+def fmt_date(dt: Any, *, separator: bool = True) -> str | None:
+    """Format a date as YYYY-MM-DD (default) or YYYYMMDD (separator=False)."""
+    if dt is None:
+        return None
+    fmt = "%Y-%m-%d" if separator else "%Y%m%d"
+    try:
+        return dt.strftime(fmt)
+    except AttributeError:
+        s = str(dt)
+        if separator:
+            return s[:10] if len(s) >= 10 else s
+        return s[:10].replace("-", "")
+
+
+def fmt_name(full_name: str | None) -> tuple[str | None, str | None]:
+    """Split 'First Last' into (last, first)."""
+    if not full_name:
+        return None, None
+    parts = full_name.strip().split(" ", 1)
+    if len(parts) == 2:
+        return parts[1], parts[0]
+    return parts[0], None
+
+
+__all__ = ["ExportResult", "fmt_dt", "fmt_date", "fmt_name"]

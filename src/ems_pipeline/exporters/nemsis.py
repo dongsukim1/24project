@@ -26,7 +26,7 @@ from __future__ import annotations
 from typing import Any
 
 from ems_pipeline.claim.canonical import CanonicalClaim
-from ems_pipeline.exporters import ExportResult
+from ems_pipeline.exporters import ExportResult, fmt_dt, fmt_name
 
 # ---------------------------------------------------------------------------
 # Required NEMSIS fields (simplified MVP list)
@@ -74,12 +74,6 @@ _DISPOSITION_MAP = {
 # ---------------------------------------------------------------------------
 
 
-def _fmt_dt(dt: Any) -> str | None:
-    if dt is None:
-        return None
-    return dt.isoformat()
-
-
 def _export_eresponse(claim: CanonicalClaim) -> dict[str, Any]:
     return {
         "eResponse.01": claim.encounter.agency_id,
@@ -95,22 +89,20 @@ def _export_eresponse(claim: CanonicalClaim) -> dict[str, Any]:
 def _export_etimes(claim: CanonicalClaim) -> dict[str, Any]:
     t = claim.timeline
     return {
-        "eTimes.01": _fmt_dt(t.psap_call_datetime),
-        "eTimes.03": _fmt_dt(t.dispatch_notified_datetime),
-        "eTimes.05": _fmt_dt(t.unit_enroute_datetime),
-        "eTimes.06": _fmt_dt(t.unit_on_scene_datetime),
-        "eTimes.07": _fmt_dt(t.patient_contact_datetime),
-        "eTimes.09": _fmt_dt(t.transport_begin_datetime),
-        "eTimes.11": _fmt_dt(t.arrive_destination_datetime),
-        "eTimes.12": _fmt_dt(t.transfer_of_care_datetime),
+        "eTimes.01": fmt_dt(t.psap_call_datetime),
+        "eTimes.03": fmt_dt(t.dispatch_notified_datetime),
+        "eTimes.05": fmt_dt(t.unit_enroute_datetime),
+        "eTimes.06": fmt_dt(t.unit_on_scene_datetime),
+        "eTimes.07": fmt_dt(t.patient_contact_datetime),
+        "eTimes.09": fmt_dt(t.transport_begin_datetime),
+        "eTimes.11": fmt_dt(t.arrive_destination_datetime),
+        "eTimes.12": fmt_dt(t.transfer_of_care_datetime),
     }
 
 
 def _export_epatient(claim: CanonicalClaim) -> dict[str, Any]:
     p = claim.patient
-    name_parts = (p.full_name or "").split(" ", 1)
-    first = name_parts[0] if name_parts else None
-    last = name_parts[1] if len(name_parts) > 1 else None
+    last, first = fmt_name(p.full_name)
     race_codes = [rv.code for rv in p.race] if p.race else []
     return {
         "ePatient.02": last,
@@ -142,7 +134,7 @@ def _export_evitals(claim: CanonicalClaim) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for v in claim.clinical.vitals:
         out.append({
-            "eVitals.01": _fmt_dt(v.timestamp),
+            "eVitals.01": fmt_dt(v.timestamp),
             "eVitals.name": v.name,
             "eVitals.value": v.value,
             "eVitals.unit": v.unit,
@@ -156,7 +148,7 @@ def _export_eprocedures(claim: CanonicalClaim) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for p in claim.clinical.procedures:
         out.append({
-            "eProcedures.01": _fmt_dt(p.timestamp),
+            "eProcedures.01": fmt_dt(p.timestamp),
             "eProcedures.03": p.coded.code if p.coded else None,
             "eProcedures.03_system": p.coded.code_system if p.coded else None,
             "eProcedures.03_display": p.name,
@@ -169,7 +161,7 @@ def _export_emedications(claim: CanonicalClaim) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for m in claim.clinical.medications:
         out.append({
-            "eMedications.01": _fmt_dt(m.timestamp),
+            "eMedications.01": fmt_dt(m.timestamp),
             "eMedications.03": m.coded.code if m.coded else None,
             "eMedications.03_display": m.drug,
             "eMedications.05": m.dose,
