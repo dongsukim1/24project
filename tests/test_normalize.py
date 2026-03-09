@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-from ems_pipeline.nlp.normalize import UnitIdRule, normalize_text
+from ems_pipeline.normalize import UnitIdRule, normalize_text
 
 
 def test_normalize_examples() -> None:

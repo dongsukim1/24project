@@ -21,9 +21,9 @@ from typing import Any
 from ems_pipeline.models import EntitiesDocument, Entity, Transcript
 from ems_pipeline.nlp.negation import apply_negation
 from ems_pipeline.nlp.nlp_extractor import NlpExtractor
-from ems_pipeline.nlp.normalize import UnitIdRule, normalize_text
-from ems_pipeline.nlp.normalize import _compile_unit_id_rules as _compile_unit_id_rules_from_lexicon
-from ems_pipeline.nlp.normalize import _load_lexicon as _load_lexicon_from_resources
+from ems_pipeline.normalize import UnitIdRule, normalize_text
+from ems_pipeline.normalize import _compile_unit_id_rules as _compile_unit_id_rules_from_lexicon
+from ems_pipeline.normalize import _load_lexicon as _load_lexicon_from_resources
 
 _nlp_extractor: NlpExtractor | None = None
 _nlp_extractor_initialized = False
