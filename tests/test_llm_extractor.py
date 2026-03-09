@@ -144,3 +144,106 @@ def test_entity_tool_definition_has_required_fields() -> None:
     assert "negated" in props
     assert "experiencer" in props
     assert "temporality" in props
+
+
+# --- LlmExtractor tests ---
+
+import json
+from unittest.mock import MagicMock, patch
+
+from ems_pipeline.llm.extractor import LlmExtractor
+from ems_pipeline.models import EntitiesDocument, Transcript
+
+
+def _make_mock_response(entities_payload: list[dict]) -> MagicMock:
+    """Build a mock Anthropic API response with tool_use content."""
+    tool_block = MagicMock()
+    tool_block.type = "tool_use"
+    tool_block.name = "record_entities"
+    tool_block.input = {"entities": entities_payload}
+
+    response = MagicMock()
+    response.content = [tool_block]
+    response.stop_reason = "tool_use"
+    return response
+
+
+def test_llm_extractor_extract_short_transcript() -> None:
+    mock_client = MagicMock()
+    mock_client.messages.create.return_value = _make_mock_response([
+        {"type": "SYMPTOM", "text": "chest pain", "segment_id": "seg_0000",
+         "confidence": 0.95, "negated": False, "experiencer": "patient"},
+    ])
+
+    extractor = LlmExtractor(client=mock_client)
+    transcript = Transcript(segments=[
+        Segment(start=0.0, end=5.0, speaker="spk0", text="patient has chest pain", confidence=0.9),
+    ])
+
+    result = extractor.extract(transcript)
+    assert isinstance(result, EntitiesDocument)
+    assert len(result.entities) == 1
+    assert result.entities[0].type == "SYMPTOM"
+    assert result.entities[0].text == "chest pain"
+    assert result.entities[0].start == 0.0
+    assert result.entities[0].end == 5.0
+    assert result.entities[0].speaker == "spk0"
+    assert result.entities[0].attributes["source"] == "llm"
+    assert result.entities[0].attributes["negated"] is False
+
+    mock_client.messages.create.assert_called_once()
+    call_kwargs = mock_client.messages.create.call_args.kwargs
+    assert call_kwargs["tools"][0]["name"] == "record_entities"
+
+
+def test_llm_extractor_extract_long_transcript_chunks() -> None:
+    """Transcripts > 15 segments should produce multiple API calls."""
+    mock_client = MagicMock()
+    mock_client.messages.create.return_value = _make_mock_response([])
+
+    extractor = LlmExtractor(client=mock_client)
+    transcript = Transcript(segments=[
+        Segment(start=float(i), end=float(i + 1), speaker=f"spk{i % 2}",
+                text=f"segment {i}", confidence=0.9)
+        for i in range(25)
+    ])
+
+    result = extractor.extract(transcript)
+    assert isinstance(result, EntitiesDocument)
+    assert mock_client.messages.create.call_count >= 2
+
+
+def test_llm_extractor_negation_in_attributes() -> None:
+    mock_client = MagicMock()
+    mock_client.messages.create.return_value = _make_mock_response([
+        {"type": "SYMPTOM", "text": "chest pain", "segment_id": "seg_0000",
+         "confidence": 0.9, "negated": True, "uncertain": False,
+         "experiencer": "patient", "temporality": "2 hours ago"},
+    ])
+
+    extractor = LlmExtractor(client=mock_client)
+    transcript = Transcript(segments=[
+        Segment(start=0.0, end=5.0, speaker="spk0", text="denies chest pain 2 hours ago", confidence=0.9),
+    ])
+
+    result = extractor.extract(transcript)
+    attrs = result.entities[0].attributes
+    assert attrs["negated"] is True
+    assert attrs["uncertain"] is False
+    assert attrs["experiencer"] == "patient"
+    assert attrs["temporality"] == "2 hours ago"
+
+
+def test_llm_extractor_model_env_override() -> None:
+    mock_client = MagicMock()
+    mock_client.messages.create.return_value = _make_mock_response([])
+
+    with patch.dict("os.environ", {"EMS_EXTRACT_MODEL": "claude-haiku-4-5-20251001"}):
+        extractor = LlmExtractor(client=mock_client)
+        transcript = Transcript(segments=[
+            Segment(start=0.0, end=1.0, speaker="spk0", text="hello", confidence=0.9),
+        ])
+        extractor.extract(transcript)
+
+    call_kwargs = mock_client.messages.create.call_args.kwargs
+    assert call_kwargs["model"] == "claude-haiku-4-5-20251001"
