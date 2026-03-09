@@ -175,13 +175,11 @@ coexist.  `build-claim` with `--schema-version 0.1` (default) produces the legac
 - ASR model name comes from `EMS_ASR_MODEL` (`base`, `small`, `medium`, `large-v3`).
 - Payer-rules retrieval reads from `EMS_PAYER_RULES_INDEX` when set.
 - Coding-guidelines retrieval reads from `EMS_CODING_GUIDELINES_INDEX` when set.
-- NLP extraction uses `gliner` (`Ihor/gliner-biomed-base-v1.0` by default).
-- GLiNER weights download from Hugging Face on first model load.
-- GLiNER runs on CPU by default; no GPU is required.
-- GLiNER confidence threshold defaults to `0.5`.
-- Negation/context handling is a v1 ConText-inspired rule set with known scope/syntax limitations.
-- The v2 dependency-parse negation idea is documented only (no implementation yet).
-- No `spacy` dependency is required for the current NLP/negation path.
+- Entity extraction uses the Claude API (`anthropic` SDK) via tool_use.
+- Requires `ANTHROPIC_API_KEY` in the environment.
+- Default model is `claude-sonnet-4-20250514`; override with `EMS_EXTRACT_MODEL`.
+- Transcripts are adaptively chunked (<=15 segments per call; longer transcripts split at speaker turn boundaries).
+- Negation, uncertainty, experiencer, and temporality are detected by the LLM in a single pass.
 - This repository is a prototype and is not production-complete.
 
 ### Diarization
